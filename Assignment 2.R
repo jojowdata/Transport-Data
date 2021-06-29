@@ -1,0 +1,460 @@
+###################################################################################
+# Module: Interpretation of Data
+# Assignment 2' 'Analyse Data collected by National Census in Rep. of Ireland 
+# 2011.
+# Student Name: Joanne White
+# Student ID:   A00268096
+# Date:         01/12/2019
+###################################################################################
+
+# Import Libraries to manipulate the data
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(gapminder)
+library(ggplot2)
+
+
+# Import the data which is a csv file to a dataframe
+df_transport<- read.csv("TransportCSOfile.csv",header = TRUE)
+
+# Explore the data
+# Displays first 6 records 
+print(head(df_transport))
+# Displays Statistics for each column
+print(summary(df_transport))
+# Displays the names of the columns
+print(colnames(df_transport))
+# Displays the structure
+print(str(df_transport))
+
+
+# Remove irrevelant Columns (I have gone for removing 2 columns)
+df_transport_fix_col <- df_transport %>%
+  select(-c("SA_NAME","GEOGID"))
+# Check the columns in the df to make sure they are removed
+print(colnames(df_transport_fix_col))
+
+
+# Go through the Column names and change them to a clear understandable name
+
+# Change Population_Aged_5_Over_By_Means_Of_Travel_To_Work_School_College_ to MOT_
+colnames(df_transport_fix_col) <- sub("Population_Aged_5_Over_By_Means_Of_Travel_To_Work_School_College_", "MOT_",colnames(df_transport_fix_col))
+
+# Change Population_Aged_5_Over_By_Time_Leaving_Home_To_Travel_To_Work_School_College_ to TLH_
+colnames(df_transport_fix_col) <- sub("Population_Aged_5_Over_By_Time_Leaving_Home_To_Travel_To_Work_School_College_", "TLH_",colnames(df_transport_fix_col))
+
+# Change Population_Aged_5_Over_By_Journey_Time_To_Work_School_College_ to JT_
+colnames(df_transport_fix_col) <- sub("Population_Aged_5_Over_By_Journey_Time_To_Work_School_College_","JT_",colnames(df_transport_fix_col))
+
+# Remove _2011 from all the column names, assume all data from 2011 Census
+colnames(df_transport_fix_col) <- sub("_2011","",colnames(df_transport_fix_col))
+
+# Check the column names have changed print them to the screen
+print(colnames(df_transport_fix_col))
+# Look at the structure of the data
+print(str(df_transport_fix_col))
+
+##########################################
+# Check for Missing values
+##########################################
+
+##########################################
+# NA's
+##########################################
+
+# Displays if any missing values
+print(table(is.na(df_transport_fix_col)))
+
+# Displays rows with nulls only
+print (df_transport_fix_col[!complete.cases(df_transport_fix_col),])
+
+# Look at file structure
+print(str(df_transport_fix_col))
+
+# Given structure of data will deal(more than one record for electrol) with missing values by deleting the rows
+df_transport_fix <- drop_na(df_transport_fix_col)
+# Check its worked 
+print("Number of NA's = TRUE")
+print(table(is.na(df_transport_fix)))
+
+###############################
+# Check for blanks NANs
+###############################
+
+# Find blanks replace with NA
+df_cleaner <- mutate_all(df_transport_fix, list(~na_if(.,"")))
+
+# Review the df and filter on NA
+print("Number of NA's = to number of TRUE, changed from blanks to na")
+print(table(is.na(df_cleaner)))
+
+# Put any NA's into table
+df_blanks <- df_cleaner%>%
+  filter_all(any_vars(is.na(.)))
+
+# After looking at the blanks table (18 blanks) will double check the planning regions for Donegal and Dublin City
+
+# Take df_blanks and for each NA add in missing planning region   
+df_clean_complete <- df_cleaner
+df_clean_complete[which(is.na(df_clean_complete$Planning.Region) & df_clean_complete$County == "Dublin City"),]$Planning.Region = "Eastern and Midlands" 
+df_clean_complete[which(is.na(df_clean_complete$Planning.Region) & df_clean_complete$County == "Donegal"),]$Planning.Region = "North and West" 
+
+
+# Check it's worked
+print("Number of NA's = TRUE")
+
+df_blanks <- df_clean_complete%>%
+  filter_all(any_vars(is.na(.)))
+
+print(df_blanks)
+
+# Reviewing the data noticed  "South" instead of Southern in Planning Regions check this
+# Confirmed 1 record need to fix it, change it to Southern
+# Change South to Southern
+df_clean_complete[which(df_clean_complete$Planning.Region == "South"),]$Planning.Region = "Southern"
+
+
+############################################################
+# Check for Outliers - 
+############################################################
+
+# define a function to remove outliers
+find_outliers <- function(data) {
+  # Calcualate upper and lower quartiles
+  lowerq = quantile(data)[2]
+  upperq = quantile(data)[4]
+  # Calculate IQR range
+  iqr = upperq - lowerq #Or use IQR(data)
+  # we identify extreme outliers
+  extreme.threshold.upper = (iqr * 3) + upperq
+  extreme.threshold.lower = lowerq - (iqr * 3)
+  return(which(data > extreme.threshold.upper | data < extreme.threshold.lower))
+}
+
+# Decided to treat all columns at once as there are definite outliers
+df_outliers_pre <- df_clean_complete %>%
+  select(starts_with("MOT_"),starts_with("TLH_"),starts_with("JT_"))%>%
+  select(-contains("Total")) %>%
+  select(-contains("Comb")) %>%
+  select(-contains("Not_Stated"))
+
+df_outliers <- unlist(lapply(df_outliers_pre, find_outliers))
+
+outliers <- df_clean_complete[df_outliers,]
+
+# Reviewed the outliers table and decided to remove all in that set from the df 
+# example datacode 1845 had quite high numbers
+
+# So remove outliers from the data set
+inliers <- df_clean_complete[-df_outliers,]
+
+# By displaying the data as a boxplot
+# Only select variables with population data
+# Disregard the totals columns and also the combined totals, once outliers 
+# are identifed if any these should be ok
+df_transport_boxplot <- inliers %>%
+  select(starts_with("MOT")) %>%
+  select(-c("MOT_Total")) %>%
+  select(-contains("Comb")) %>%
+  select(-contains("MOT_Other"))
+
+
+boxplot(df_transport_boxplot,las = 2,
+        col = c("orange","red")) #,col = colours)
+
+# Final df to be used to answer questions is called df_transport_clean
+df_transport_clean <- inliers
+
+
+
+###############################################################################
+# Moving on to Questions                                                     #
+###############################################################################
+
+#######################################################################
+# Question 1 - Most popular transport nationally
+# Summary for the modes of transports
+#######################################################################
+df_transport_mode_summary <- df_transport_clean %>%
+  select(starts_with("MOT")) %>%
+  select(-c("MOT_Total")) %>%
+  select(-contains("Comb"))
+
+
+# Sum of columns
+col_sums <- colSums(df_transport_mode_summary)
+#print to console
+print("Most popular mode of transport Nationally is :")
+print( colnames(df_transport_mode_summary)[which(col_sums == max(col_sums))])
+
+#######################################################################
+# Question 2
+# Get Fingal data into set and sum the modes and find the max
+#######################################################################
+
+df_transport_mode_fingal <- df_transport_clean%>%
+  # rows with Fingal as the county
+  filter(County =="Fingal")%>%
+  # only have columns required
+  select(starts_with("MOT")) %>%
+  select(-c("MOT_Total")) %>%
+  select(-contains("Comb")) 
+  
+# Sum of columns 
+col_sums <- colSums(df_transport_mode_fingal)
+#print to console
+print("Most popular mode of transport in Fingal is :")
+print( colnames(df_transport_mode_fingal)[which(col_sums == max(col_sums))])
+
+
+
+##############################################################################
+# Question 3
+# What differences are there between choice of transport in cities compared to 
+# other regions.
+##############################################################################
+
+# Need to split the data into 2,cities and non cities sum the totals and 
+# compare
+
+df_transport_mode_city <- df_transport_clean %>%
+  select(starts_with("MOT"),c(County)) %>%
+  #select counties with city in the name
+  filter(str_detect(County, "City"))
+
+# Sum the columns divide by sum of the totals for cities
+v_city <- summarise(df_transport_mode_city, Total_On_Foot =  sum(MOT_On_Foot)/sum(MOT_Total),
+          Total_Bicycle = sum(MOT_Bicycle)/sum(MOT_Total),
+          Total_Bus_Minibus_Coach  = sum(MOT_Bus_Minibus_Coach)/sum(MOT_Total),
+          Total_Train_Dart_Luas = sum(MOT_Train_Dart_Luas)/sum(MOT_Total),
+          Total_Motorcycle_Scooter = sum(MOT_Motorcycle_Scooter)/sum(MOT_Total),
+          Total_Car_Driver = sum(MOT_Car_Driver)/sum(MOT_Total),
+          Total_Car_Passenger = sum(MOT_Car_Passenger)/sum(MOT_Total),
+          Total_Van = sum(MOT_Van)/sum(MOT_Total),
+          Total_Other = sum(MOT_Other)/sum(MOT_Total),
+          Total_Soft_Transport = sum(MOT_Soft_Modes_Comb)/sum(MOT_Total),
+          Total_Public_Transport_Comb = sum(MOT_Public_Transport_Comb)/sum(MOT_Total),                           
+          Total_MOT_Private_Transport_Comb = sum(MOT_Private_Transport_Comb)/sum(MOT_Total))
+
+# Rest of the regions
+df_transport_mode_rest <- df_transport_clean %>%
+  select(starts_with("MOT"),c(County)) %>%
+  #select counties with city in the name
+  filter(!str_detect(County, "City"))
+
+# Sum the columns divide by sum of the totals for rest (ROI - cities)
+v_rest <- summarise(df_transport_mode_rest, Total_On_Foot =  sum(MOT_On_Foot)/sum(MOT_Total),
+                    Total_Bicycle = sum(MOT_Bicycle)/sum(MOT_Total),
+                    Total_Bus_Minibus_Coach  = sum(MOT_Bus_Minibus_Coach)/sum(MOT_Total),
+                    Total_Train_Dart_Luas = sum(MOT_Train_Dart_Luas)/sum(MOT_Total),
+                    Total_Motorcycle_Scooter = sum(MOT_Motorcycle_Scooter)/sum(MOT_Total),
+                    Total_Car_Driver = sum(MOT_Car_Driver)/sum(MOT_Total),
+                    Total_Car_Passenger = sum(MOT_Car_Passenger)/sum(MOT_Total),
+                    Total_Van = sum(MOT_Van)/sum(MOT_Total),
+                    Total_Other = sum(MOT_Other)/sum(MOT_Total),
+                    Total_Soft_Transport = sum(MOT_Soft_Modes_Comb)/sum(MOT_Total),
+                    Total_Public_Transport_Comb = sum(MOT_Public_Transport_Comb)/sum(MOT_Total),                           
+                    Total_MOT_Private_Transport_Comb = sum(MOT_Private_Transport_Comb)/sum(MOT_Total))
+
+# Creat 2 way barplot for the city and rest of ROI
+barplot(as.matrix(rbind(v_city,v_rest)), las=2,beside=TRUE,legend.text = c("City", "Other Regions"),main = "Transport Modes for city V other regions",args.legend=list(x="topleft"))
+
+
+#######################################################################
+# Question 4
+# What proportion of commuters leave home outisde 8-9am
+# Total for each TLH , find total for 8-9 and what proportion is this.
+#######################################################################
+
+df_transport_rush_hour <- df_transport_clean %>%
+  select((TLH_0801_0830),c(TLH_0831_0900),c(TLH_Total),c(TLH_Not_Stated))%>%
+# Taking out the not stated as not idea what these are and will skew data
+  mutate(Total_for_TLH_minus_Not_Stated = TLH_Total - TLH_Not_Stated)
+
+# Summary totals for each column
+col_sums_rush_hour <- colSums(df_transport_rush_hour)
+
+print("The proportion (%) of people who leave home outside of 8-9am is:")
+# Take the total people minus those who travel 8-9am to find those who don't travel 8-9 
+rest_of_pop <- col_sums_rush_hour["Total_for_TLH_minus_Not_Stated"]-col_sums_rush_hour["TLH_0801_0830"]-col_sums_rush_hour["TLH_0831_0900"]
+rest_of_pop <- rest_of_pop / col_sums_rush_hour["TLH_Total"]*100
+print(paste(round(rest_of_pop,2),sep = "","%"))
+
+
+#######################################################################
+# Question 5
+# Are communters in Fingal likely to travel for > 45mins each morning
+#######################################################################
+
+df_transport_JT_fingal <- df_transport_clean%>%
+  # rows with Fingal as the county
+  filter(County =="Fingal")%>%
+  # only have columns required
+  select(starts_with("JT")) %>%
+  select(-contains("Comb")) %>%
+  select(-contains("Not_Stated"))
+#Summarise the totals Journey time < 45 and greater than 45 mins in fingal
+
+v_jtfingal <- summarise(df_transport_JT_fingal,
+                num_commuters_less_45_F = 
+                sum(Total_JT_Under_15 = sum(JT_Under_15_mins),
+                Total_JT_15_to_29 = sum(JT_Quarter_To_Under_Half_Hour),
+                Total_JT_30_to_44 = sum(JT_Half_Hour_To_Under_Three_Quarter_Hours)),
+                num_commuters_greater_45_F=
+                sum(JT_45_To_59 = sum(JT_Three_Quarter_Hours_To_Under_One_Hour),
+                Total_JT_60_to_90 = sum(JT_One_Hour_To_Under_One_Hour_Thirty_Mins),
+                Total_JT_90_And_Over = sum(JT_One_And_Half_Hours_And_Over)))
+
+# Display bar chart 
+barplot(as.matrix(v_jtfingal), las=2,
+        beside=TRUE,legend.text = c("time less 45mins", 
+                                    "time greater 45"),
+                                    main = "Journey time to work for commuters in Fingal",
+                                    args.legend=list(x="topright"))
+
+
+#######################################################################
+# Question 6                                                           
+# How does this compare with other counties in the Same NUTSIII region 
+#######################################################################
+
+#Set up the correct data
+df_transport_JT_NUTS <- df_transport_clean%>%
+  # rows with NUTS as the region
+  filter(NUTS_III =="Dublin")%>%
+  # only have columns required
+  select(starts_with("JT"),c(County)) %>%
+  select(-contains("Comb")) %>%
+  select(-contains("Not_Stated"))%>%
+  select(-contains("Total"))%>%
+  group_by(County)
+
+ print(df_transport_JT_NUTS)
+ # SUmmarise the totals for each county for each mode of transport for less than 45 
+ # and greater than 45mins
+ v_jtnuts <- summarise(df_transport_JT_NUTS,
+             Total_Sum_per_County_Less_45 = sum(Total_JT_Under_15 = sum(JT_Under_15_mins),
+             Total_JT_15_to_29 = sum(JT_Quarter_To_Under_Half_Hour),
+             Total_JT_30_to_44 = sum(JT_Half_Hour_To_Under_Three_Quarter_Hours)),
+             Total_Sum_per_County_Greater_45=
+             sum(JT_45_To_59 = sum(JT_Three_Quarter_Hours_To_Under_One_Hour),
+             Total_JT_60_to_90 = sum(JT_One_Hour_To_Under_One_Hour_Thirty_Mins),
+             Total_JT_90_And_Over = sum(JT_One_And_Half_Hours_And_Over)))
+ 
+ # Remove county names to use later in the barplot
+ county_names <- v_jtnuts$County
+ v_jtnuts <- select(v_jtnuts, -County)
+ 
+ # Plot the data as a bar chart
+ barplot(as.matrix(v_jtnuts), las=2,
+         beside=TRUE,legend.text = county_names,
+         main = "Journey time to work for commuters in Fingal",
+         args.legend=list(x="topright"))
+
+
+
+#######################################################################
+# Question 7
+# Residents of which 5 counties have longest commute times?
+#######################################################################
+# Need to find the average commute time per county and compare
+ 
+# To find average commute time need to take the 1/2 time of each JT category, multiple
+# by this by the number of peoplein that category.  Sum up all of these divide by number of people
+# in each county => average journey time per county. Assume do not use not_stated as can't figure out half of
+# it.
+#####################################################################################################
+#Arrange in desc order
+ df_JT_totals <- df_transport_clean %>%
+   select(starts_with("JT_")) %>%
+
+   
+   # Get column totals
+   summarise(Total_JT_Under_15 = sum(JT_Under_15_mins),
+             Total_JT_15_to_29 = sum(JT_Quarter_To_Under_Half_Hour),
+             Total_JT_30_to_44 = sum(JT_Half_Hour_To_Under_Three_Quarter_Hours),
+             Total_JT_45_To_59 = sum(JT_Three_Quarter_Hours_To_Under_One_Hour),
+             Total_JT_60_to_90 = sum(JT_One_Hour_To_Under_One_Hour_Thirty_Mins),
+             Total_JT_90_And_Over = sum(JT_One_And_Half_Hours_And_Over))
+ 
+# Tried to find Normal Distribition on top of bar chart to figure out average lenght of journey over 1.5 hours catergory
+# using MASS but couldnt get it work, would have put this on top to get an idea but time quantitized!! Leson learnt
+# Use of a lollipop chart??
+# Barplot of data
+ barplot(as.matrix(df_JT_totals))
+ 
+# Educated surmise journey time is 1 hour 45 mins
+ 
+# Arrange in desc order
+df_transport_long_JT <- df_transport_clean %>%
+  select(starts_with("County"),starts_with("JT_")) %>%
+  group_by(County) %>%
+  summarise(Total_Commute_Time_per_County = sum (sum(JT_Under_15_mins) * 7.5,
+                                        sum(JT_Quarter_To_Under_Half_Hour)*22.5,
+                                        sum(JT_Half_Hour_To_Under_Three_Quarter_Hours)*37.5,
+                                        sum(JT_Three_Quarter_Hours_To_Under_One_Hour)*52.5,
+                                        sum(JT_One_Hour_To_Under_One_Hour_Thirty_Mins)*75,
+                                        sum(JT_One_And_Half_Hours_And_Over )* 105),
+            Average_Commute_Time = Total_Commute_Time_per_County/(sum(JT_Total)- sum(JT_Not_Stated)))%>%
+  arrange(desc(Average_Commute_Time)) %>%
+  # Remove tot commute time per county as dont need it now / for print out
+  select(-c(Total_Commute_Time_per_County))
+
+# Printing out the top5 highest commute times
+print("###################################")
+print("Top 5 counties with the longest commute time")
+print(df_transport_long_JT[0:5,])
+
+
+#######################################################################
+# Question 8
+# What proportion of cars used in morning commute contain only 1 person?
+#######################################################################
+
+# Use car driver - car passenger to figure out which contains 1 person
+# Assumption that only 1 passenger in each car
+# Add column for this single passenger, total each column and find percentage
+
+df_transport_car_driver <- df_transport_clean %>%
+  # Select all columns with MOT_Car
+  select(starts_with("MOT_car")) %>%
+  # Calcualte the single drivres by car drivers minus passengers
+  mutate(Total_Single_Driver=MOT_Car_Driver - MOT_Car_Passenger)
+
+
+col_sums_driver <- colSums(df_transport_car_driver)
+print(col_sums_driver)
+
+print("The proportion (%) of drivers with one person in them is:")
+# Take the total single drive and divide it by total car driver multiple by 100 to get percentage
+prop <- col_sums_driver["Total_Single_Driver"]/col_sums_driver["MOT_Car_Driver"]*100
+
+print(paste(round(prop,2),sep = "","%"))
+
+  
+  
+#############################################################################
+# Question 9
+# Which electorall division within each planning region should be prioritised
+# for investment
+#############################################################################
+
+# One electoral division per planning region assumption that those with high car
+# usage should have more investment into Public transport.
+# Find the min value for Public Tranport Combined for each division by summing the total for each division
+# and selecting the one  division with  the min value for each planning region
+
+df_investment <- df_transport_clean %>%
+  # Select all columns required
+  select(c(Planning.Region),c(Electoral.Division.Name),starts_with("MOT_Public_Transport_Comb"))  %>%
+  group_by(Planning.Region, Electoral.Division.Name) %>%
+  # Summing each eectorla division into one row
+  summarise (Total_Sum_per_Division =  sum(MOT_Public_Transport_Comb))%>%
+  # Select the min of electoral division in each region
+  slice(which.min(Total_Sum_per_Division))
+
+# Print results to console
+print("Electoral divisions with the least public transport usage by region")
+print(df_investment)
+
